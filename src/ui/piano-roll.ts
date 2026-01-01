@@ -7,8 +7,12 @@ export class PianoRoll {
 
     // Viewport
     pixelsPerSecond = 50;
-    pixelsPerNote = 4;
+    // pixelsPerNote = 4; // Not used really, we use noteHeight
     noteHeight = 4;
+
+    // State for redraw
+    lastDrawTime = 0;
+    activeNotesCache: Map<number, number> | undefined;
 
     // Colors
     colors = [
@@ -32,7 +36,7 @@ export class PianoRoll {
         // Handle Resize
         const resizeObserver = new ResizeObserver(() => {
             this.canvas.width = container.clientWidth;
-            this.draw(0);
+            this.draw(this.lastDrawTime, this.activeNotesCache);
         });
         resizeObserver.observe(container);
     }
@@ -42,7 +46,25 @@ export class PianoRoll {
         this.draw(0);
     }
 
+    setNoteHeight(h: number) {
+        this.noteHeight = Math.max(4, Math.min(50, h));
+        this.canvas.height = 128 * this.noteHeight;
+        this.draw(this.lastDrawTime, this.activeNotesCache);
+    }
+
+    zoomIn() {
+        this.setNoteHeight(this.noteHeight + 4);
+    }
+
+    zoomOut() {
+        this.setNoteHeight(this.noteHeight - 4);
+    }
+
     draw(currentTime: number, activeNotes?: Map<number, number>) {
+        this.lastDrawTime = currentTime;
+        if (activeNotes) this.activeNotesCache = activeNotes;
+        else if (activeNotes === undefined && this.activeNotesCache) activeNotes = this.activeNotesCache;
+
         if (!this.midi) {
             this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
             this.ctx.fillStyle = '#444';
@@ -133,7 +155,7 @@ export class PianoRoll {
                 this.ctx.font = '10px monospace';
                 this.ctx.textAlign = 'right';
                 const label = `C${m / 12 - 1}`;
-                this.ctx.fillText(label, keyWidth - 2, y + this.noteHeight * 0.8 + 2);
+                this.ctx.fillText(label, keyWidth - 2, y + this.noteHeight * 0.7);
             }
         }
 

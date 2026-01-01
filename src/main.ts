@@ -65,8 +65,14 @@ app.innerHTML = `
     </div>
 
     <div class="card">
-        <h3>Piano Roll</h3>
-        <div id="piano-roll" style="height: 400px; width: 100%; position: relative;"></div>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h3>Piano Roll</h3>
+            <div>
+                <button id="pr-zoom-out" style="padding: 2px 8px;">-</button>
+                <button id="pr-zoom-in" style="padding: 2px 8px;">+</button>
+            </div>
+        </div>
+        <div id="piano-roll" style="height: 400px; width: 100%; position: relative; overflow-y: auto;"></div>
     </div>
 
     <div class="visualizers">
@@ -120,6 +126,8 @@ const adsrEditor = new ADSREditor('adsr-editor', (adsr) => {
 });
 
 const pianoRoll = new PianoRoll('piano-roll');
+document.getElementById('pr-zoom-in')?.addEventListener('click', () => pianoRoll.zoomIn());
+document.getElementById('pr-zoom-out')?.addEventListener('click', () => pianoRoll.zoomOut());
 
 // Channel State Storage for UI switching
 const channelStates: { wavetable: Float32Array, adsr: { a: number, d: number, s: number, r: number } }[] = [];
