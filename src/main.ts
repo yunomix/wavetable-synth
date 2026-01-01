@@ -19,7 +19,8 @@ let duration = 0;
 let pauseTime = 0; // If we pause, we need to track this
 
 // Active Channels (Play enabled)
-const activePlayChannels = new Set([0]);
+// Active Channels (Play enabled)
+const activePlayChannels = new Set(Array.from({ length: 16 }, (_, i) => i));
 
 // Selected Editing Channel
 let editingChannel = 0;
@@ -44,6 +45,8 @@ app.innerHTML = `
        <button id="btn-play">Play</button>
        <button id="btn-stop">Stop</button>
        
+       <div id="file-info" style="margin: 10px 0; font-size: 14px; color: #acf;"></div>
+
        <input type="range" id="seek-bar" min="0" max="100" value="0" style="width: 300px;" disabled>
        <span id="time-display">0:00 / 0:00</span>
 
@@ -122,7 +125,16 @@ const pianoRoll = new PianoRoll('piano-roll');
 const channelStates: { wavetable: Float32Array, adsr: { a: number, d: number, s: number, r: number } }[] = [];
 for (let i = 0; i < 16; i++) {
     const wt = new Float32Array(32);
-    for (let k = 0; k < 32; k++) wt[k] = Math.sin((k / 32) * 2 * Math.PI);
+    for (let k = 0; k < 32; k++) {
+        const ph = k / 32;
+        if (i < 4) { // Ch 1-4: Rect
+            wt[k] = ph < 0.5 ? 1 : -1;
+        } else if (i < 8) { // Ch 5-8: Tri
+            wt[k] = ph < 0.5 ? 4 * ph - 1 : 1 - 4 * (ph - 0.5);
+        } else { // Sine
+            wt[k] = Math.sin(ph * 2 * Math.PI);
+        }
+    }
     channelStates.push({
         wavetable: wt,
         adsr: { a: 0.1, d: 0.1, s: 0.5, r: 0.2 }
@@ -189,7 +201,7 @@ for (let i = 0; i < 16; i++) {
     // Play Checkbox
     const playCheck = document.createElement('input');
     playCheck.type = 'checkbox';
-    playCheck.checked = (i === 0);
+    playCheck.checked = true; // Default all ON
     playCheck.onchange = () => {
         if (playCheck.checked) activePlayChannels.add(i);
         else activePlayChannels.delete(i);
@@ -326,6 +338,10 @@ fileInput.addEventListener('change', async (e) => {
     const bpm = midi.header.tempos.length > 0 ? midi.header.tempos[0].bpm : 120;
     document.getElementById('bpm-display')!.innerText = Math.round(bpm).toString();
 
+    // Update File Info
+    const songName = midi.name || (midi.tracks.length > 0 ? midi.tracks[0].name : '') || 'Unknown Title';
+    document.getElementById('file-info')!.innerText = `File: ${file.name} | Title: ${songName}`;
+
     console.log("MIDI Loaded", midi);
 });
 
@@ -347,6 +363,12 @@ async function startPlayback() {
         return;
     }
     await synth.init();
+
+    // Sync Channel States to AudioWorklet
+    channelStates.forEach((state, ch) => {
+        synth.setChannelWavetable(ch, state.wavetable);
+        synth.setChannelADSR(ch, state.adsr);
+    });
 
     if (isPlaying) {
         // Pause behavior
@@ -515,3 +537,4 @@ document.getElementById('adsr-lead')?.addEventListener('click', () => adsrEditor
 
 // Init first render
 updateChannelStyles();
+updateEditorLabels();
