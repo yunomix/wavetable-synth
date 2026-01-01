@@ -112,7 +112,11 @@ function getNoteName(midiVal: number) {
 const synth = new SynthEngine();
 
 // Editors need to know they are updating 'editingChannel'
-const wtEditor = new WavetableEditor('wt-editor', (wf) => {
+let wtEditor: WavetableEditor;
+wtEditor = new WavetableEditor('wt-editor', (wf) => {
+    normalizeWavetable(wf); // In-place normalization
+    wtEditor.draw(); // Update visual
+
     synth.setChannelWavetable(editingChannel, wf);
     // TODO: persist this waveform for this channel in UI state if we want to retain it visually when switching channels
     // For now, simpler: we just send to synth. 
@@ -143,6 +147,7 @@ for (let i = 0; i < 16; i++) {
             wt[k] = Math.sin(ph * 2 * Math.PI);
         }
     }
+    normalizeWavetable(wt); // Apply RMS Normalization
     channelStates.push({
         wavetable: wt,
         adsr: { a: 0.1, d: 0.1, s: 0.5, r: 0.2 }
@@ -520,6 +525,39 @@ document.getElementById('btn-stop')?.addEventListener('click', () => {
 
 
 // Presets Logic
+// Normalization Helper
+function normalizeWavetable(data: Float32Array): Float32Array {
+    let maxVal = 0;
+    let sumSq = 0;
+    for (let i = 0; i < data.length; i++) {
+        const v = data[i];
+        const abs = Math.abs(v);
+        if (abs > maxVal) maxVal = abs;
+        sumSq += v * v;
+    }
+    if (maxVal === 0) return data;
+
+    const rms = Math.sqrt(sumSq / data.length);
+    if (rms === 0) return data;
+
+    // Target RMS to match Sine (0.707) or slightly lower (0.6) to align with Tri
+    const TARGET_RMS = 0.6;
+
+    // Gain to hit target RMS
+    let gain = TARGET_RMS / rms;
+
+    // Prevent clipping: gain * maxVal <= 1.0
+    if (gain * maxVal > 1.0) {
+        gain = 1.0 / maxVal;
+    }
+
+    // Apply
+    for (let i = 0; i < data.length; i++) {
+        data[i] *= gain;
+    }
+    return data;
+}
+
 const WT_SIZE = 32;
 function generateWt(type: 'rect' | 'tri' | 'saw' | 'rand') {
     const arr = new Float32Array(WT_SIZE);
@@ -532,7 +570,7 @@ function generateWt(type: 'rect' | 'tri' | 'saw' | 'rand') {
         else if (type === 'rand') val = Math.random() * 2 - 1;
         arr[i] = val;
     }
-    return arr;
+    return normalizeWavetable(arr);
 }
 document.getElementById('wt-rect')?.addEventListener('click', () => wtEditor.setWaveform(generateWt('rect')));
 document.getElementById('wt-tri')?.addEventListener('click', () => wtEditor.setWaveform(generateWt('tri')));
