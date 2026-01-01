@@ -54,7 +54,8 @@ class WavetableProcessor extends AudioWorkletProcessor {
         }
 
         this.voices = [];
-        for (let i = 0; i < 6; i++) {
+        this.voices = [];
+        for (let i = 0; i < 64; i++) {
             this.voices.push({
                 active: false,
                 channel: 0,
@@ -267,8 +268,8 @@ class WavetableProcessor extends AudioWorkletProcessor {
             // Normalize / Limiter mechanism could be here, but simple division is safer for now.
             // 6 voices sum. To avoid clipping, maybe divide by 3 (assuming not all 6 play full volume at once usually)
             // or use a gentle tanh.
-            // Let's divide by 6 for guaranteed safety, but might be quiet. Divide by 3 is a good compromise.
-            channelData[i] = sampleSum / 4.0;
+            // 64 voices sum. Divide by 8.0 for safety (still loud enough for single notes usually).
+            channelData[i] = sampleSum / 8.0;
         }
 
         // Copy to other channels (stereo)
