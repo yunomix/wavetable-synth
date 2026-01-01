@@ -34,7 +34,39 @@ export class SynthEngine {
                 outputChannelCount: [2] // Stereo out
             });
 
+            // --- Reverb Setup ---
+            const convolver = this.context.createConvolver();
+            const reverbGain = this.context.createGain();
+
+            // Generate Impulse Response (Simple Exponential Decay Noise)
+            const duration = 2.0;
+            const rate = this.context.sampleRate;
+            const length = rate * duration;
+            const impulse = this.context.createBuffer(2, length, rate);
+            const left = impulse.getChannelData(0);
+            const right = impulse.getChannelData(1);
+
+            for (let i = 0; i < length; i++) {
+                // Exponential decay
+                const decay = Math.pow(1 - (i / length), 4.0);
+                // Noise * decay
+                left[i] = (Math.random() * 2 - 1) * decay;
+                right[i] = (Math.random() * 2 - 1) * decay;
+            }
+            convolver.buffer = impulse;
+
+            // Default: ON
+            reverbGain.gain.value = 0.5;
+            this.reverbGainNode = reverbGain;
+
+            // Routing
+            // Dry
             this.workletNode.connect(this.context.destination);
+            // Wet
+            this.workletNode.connect(convolver);
+            convolver.connect(reverbGain);
+            reverbGain.connect(this.context.destination);
+
             this.isReady = true;
             console.log("Audio Engine Initialized");
         } catch (e) {
@@ -43,6 +75,17 @@ export class SynthEngine {
     }
 
     // API
+
+    reverbGainNode: GainNode | null = null;
+
+    setReverb(enabled: boolean) {
+        if (this.reverbGainNode) {
+            // Smooth transition
+            const now = this.context.currentTime;
+            this.reverbGainNode.gain.cancelScheduledValues(now);
+            this.reverbGainNode.gain.linearRampToValueAtTime(enabled ? 0.5 : 0, now + 0.1);
+        }
+    }
 
     noteOn(note: number, velocity: number, channel: number) {
         if (!this.isReady || !this.workletNode) return;

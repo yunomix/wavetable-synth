@@ -42,6 +42,10 @@ app.innerHTML = `
        
        <input type="range" id="seek-bar" min="0" max="100" value="0" style="width: 300px;" disabled>
        <span id="time-display">0:00 / 0:00</span>
+
+       <label style="margin-left: 20px;">
+         <input type="checkbox" id="reverb-toggle" checked> Reverb
+       </label>
        
        <div style="font-family:monospace; margin-left: 20px;">
          BPM: <span id="bpm-display">--</span>
@@ -447,6 +451,10 @@ function loop() {
 
     toneTransportId = requestAnimationFrame(loop);
 }
+
+document.getElementById('reverb-toggle')?.addEventListener('change', (e) => {
+    synth.setReverb((e.target as HTMLInputElement).checked);
+});
 
 document.getElementById('btn-play')?.addEventListener('click', startPlayback);
 document.getElementById('btn-stop')?.addEventListener('click', () => {
