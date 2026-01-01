@@ -152,6 +152,39 @@ class WavetableProcessor extends AudioWorkletProcessor {
                 const adsr = chState.adsr;
                 const wavetable = chState.wavetable;
 
+                // --- DRUM MODE (CH 10 -> index 9) ---
+                if (voice.channel === 9) {
+                    voice.envTime++;
+                    const t = voice.envTime / this.sampleRateVal;
+                    let val = 0;
+
+                    if (voice.note === 35 || voice.note === 36) { // Kick
+                        const freq = 150 * Math.exp(-t * 20);
+                        const amp = Math.max(0, 1 - t * 4);
+                        val = Math.sin(t * freq * 2 * Math.PI) * amp;
+                        if (amp <= 0) { voice.active = false; voice.envState = 'IDLE'; }
+                    }
+                    else if (voice.note === 38 || voice.note === 40) { // Snare
+                        const toneAmp = Math.max(0, 1 - t * 8);
+                        const tone = Math.sin(t * 180 * 2 * Math.PI) * toneAmp * 0.5;
+                        const noiseAmp = Math.max(0, 1 - t * 5);
+                        const noise = (Math.random() * 2 - 1) * noiseAmp;
+                        val = tone + noise;
+                        if (noiseAmp <= 0) { voice.active = false; voice.envState = 'IDLE'; }
+                    }
+                    else if (voice.note >= 42 && voice.note <= 46) { // HiHat
+                        const amp = Math.max(0, 1 - t * 30);
+                        const noise = (Math.random() * 2 - 1);
+                        val = noise * amp * 0.4;
+                        if (amp <= 0) { voice.active = false; voice.envState = 'IDLE'; }
+                    } else {
+                        voice.active = false; voice.envState = 'IDLE';
+                    }
+
+                    sampleSum += val * voice.velocity * 0.8;
+                    continue;
+                }
+
                 // --- Envelope Logic ---
                 let stepSize = 0;
 

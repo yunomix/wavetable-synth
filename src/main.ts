@@ -3,6 +3,7 @@ import { Midi } from '@tonejs/midi';
 import { SynthEngine } from './audio/synth';
 import { WavetableEditor } from './ui/wavetable-editor';
 import { ADSREditor } from './ui/adsr-editor';
+import { PianoRoll } from './ui/piano-roll';
 import './style.css';
 
 // --- State ---
@@ -24,8 +25,11 @@ const activePlayChannels = new Set([0]);
 let editingChannel = 0;
 
 // Note Display State (per channel)
-const activeNotes: Set<number>[] = [];
-for (let i = 0; i < 16; i++) activeNotes.push(new Set());
+// Note Display State (per channel)
+const activeNotes: Map<number, number>[] = [];
+for (let i = 0; i < 16; i++) activeNotes.push(new Map());
+
+
 
 // --- Components ---
 const app = document.querySelector<HTMLDivElement>('#app')!;
@@ -55,6 +59,11 @@ app.innerHTML = `
     <div class="card">
       <h3>Channels</h3>
       <div class="channel-list" id="channel-list"></div>
+    </div>
+
+    <div class="card">
+        <h3>Piano Roll</h3>
+        <div id="piano-roll" style="height: 400px; width: 100%; position: relative;"></div>
     </div>
 
     <div class="visualizers">
@@ -106,6 +115,8 @@ const adsrEditor = new ADSREditor('adsr-editor', (adsr) => {
     synth.setChannelADSR(editingChannel, adsr);
     channelStates[editingChannel].adsr = { ...adsr };
 });
+
+const pianoRoll = new PianoRoll('piano-roll');
 
 // Channel State Storage for UI switching
 const channelStates: { wavetable: Float32Array, adsr: { a: number, d: number, s: number, r: number } }[] = [];
@@ -163,6 +174,9 @@ for (let i = 0; i < 16; i++) {
     editRadio.type = 'radio';
     editRadio.name = 'edit-channel';
     editRadio.checked = (i === 0);
+    if (i === 9) {
+        editRadio.style.visibility = 'hidden'; // Don't allow editing drums
+    }
     editRadio.onchange = () => {
         if (editRadio.checked) {
             editingChannel = i;
@@ -206,7 +220,7 @@ for (let i = 0; i < 16; i++) {
         if (activeNotes[i].size === 0) {
             noteDisplay.innerText = '-';
         } else {
-            const arr = Array.from(activeNotes[i]).sort((a, b) => a - b);
+            const arr = Array.from(activeNotes[i].keys()).sort((a, b) => a - b);
             noteDisplay.innerText = arr.map(n => getNoteName(n)).join(' ');
         }
 
@@ -299,6 +313,7 @@ fileInput.addEventListener('change', async (e) => {
 
     const arrayBuffer = await file.arrayBuffer();
     midi = new Midi(arrayBuffer);
+    pianoRoll.setMidi(midi);
 
     duration = midi.duration;
 
@@ -424,9 +439,8 @@ function loop() {
                     synth.noteOn(note.midi, note.velocity * 127, ch);
 
                     // Display Update
-                    activeNotes[ch].add(note.midi);
-                    updateChannelStyles(); // This might be heavy per note? optimize via requestAnimationFrame loop logic?
-                    // Actually let's put updateChannelStyles() at end of main loop
+                    activeNotes[ch].set(note.midi, note.velocity);
+                    // updateChannelStyles(); 
 
                 }, delayMs);
 
@@ -448,6 +462,16 @@ function loop() {
     // UI Update Loop for Display
     // We update channel styles every frame? Or just set a flag.
     updateChannelStyles();
+
+    // Aggregating active notes for Piano Roll
+    const allActive = new Map<number, number>();
+    activeNotes.forEach(m => {
+        m.forEach((vel, note) => {
+            const curr = allActive.get(note) || 0;
+            allActive.set(note, Math.max(curr, vel));
+        });
+    });
+    pianoRoll.draw(timeElapsed, allActive);
 
     toneTransportId = requestAnimationFrame(loop);
 }
