@@ -36,7 +36,7 @@ for (let i = 0; i < 16; i++) activeNotes.push(new Map());
 const app = document.querySelector<HTMLDivElement>('#app')!;
 app.innerHTML = `
   <div class="synth-container">
-    <h1>Wavetable Synth</h1>
+    <h1>ゆのみシンセ</h1>
     
     <div class="card control-panel">
        <button id="btn-load" class="file-upload-btn">Load MIDI File</button>
