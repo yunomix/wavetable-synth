@@ -44,35 +44,35 @@ export class SynthEngine {
 
     // API
 
-    noteOn(note: number, velocity: number) {
+    noteOn(note: number, velocity: number, channel: number) {
         if (!this.isReady || !this.workletNode) return;
         this.workletNode.port.postMessage({
             type: 'NOTE_ON',
-            payload: { note, velocity }
+            payload: { note, velocity, channel }
         });
     }
 
-    noteOff(note: number) {
+    noteOff(note: number, channel: number) {
         if (!this.isReady || !this.workletNode) return;
         this.workletNode.port.postMessage({
             type: 'NOTE_OFF',
-            payload: { note }
+            payload: { note, channel }
         });
     }
 
-    setWavetable(waveform: Float32Array) {
+    setChannelWavetable(channel: number, wavetable: Float32Array) {
         if (!this.isReady || !this.workletNode) return;
         this.workletNode.port.postMessage({
-            type: 'SET_WAVETABLE',
-            payload: waveform
+            type: 'SET_CHANNEL_WAVETABLE',
+            payload: { channel, wavetable }
         });
     }
 
-    setADSR(adsr: { a: number, d: number, s: number, r: number }) {
+    setChannelADSR(channel: number, adsr: { a: number, d: number, s: number, r: number }) {
         if (!this.isReady || !this.workletNode) return;
         this.workletNode.port.postMessage({
-            type: 'SET_ADSR',
-            payload: adsr
+            type: 'SET_CHANNEL_ADSR',
+            payload: { channel, adsr }
         });
     }
 

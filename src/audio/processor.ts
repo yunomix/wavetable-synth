@@ -12,6 +12,7 @@ interface ADSR {
 
 interface Voice {
     active: boolean;
+    channel: number; // MIDI Channel 0-15
     note: number;
     phase: number; // Phase in the wavetable (0-31.99)
     phaseStep: number; // How much to increment phase per sample
@@ -24,28 +25,39 @@ interface Voice {
     velocity: number; // 0-1
 }
 
+interface ChannelState {
+    wavetable: Float32Array;
+    adsr: ADSR;
+}
+
 const WAVETABLE_SIZE = 32;
 
 class WavetableProcessor extends AudioWorkletProcessor {
-    wavetable: Float32Array;
-    adsr: ADSR;
+    channels: ChannelState[];
     voices: Voice[];
     sampleRateVal: number;
 
     constructor() {
         super();
-        this.wavetable = new Float32Array(WAVETABLE_SIZE);
-        // Default Sine-ish
-        for (let i = 0; i < WAVETABLE_SIZE; i++) {
-            this.wavetable[i] = Math.sin((i / WAVETABLE_SIZE) * 2 * Math.PI);
-        }
 
-        this.adsr = { a: 0.1, d: 0.1, s: 0.5, r: 0.2 };
+        this.channels = [];
+        for (let ch = 0; ch < 16; ch++) {
+            const wt = new Float32Array(WAVETABLE_SIZE);
+            // Default Sine-ish
+            for (let i = 0; i < WAVETABLE_SIZE; i++) {
+                wt[i] = Math.sin((i / WAVETABLE_SIZE) * 2 * Math.PI);
+            }
+            this.channels.push({
+                wavetable: wt,
+                adsr: { a: 0.1, d: 0.1, s: 0.5, r: 0.2 }
+            });
+        }
 
         this.voices = [];
         for (let i = 0; i < 6; i++) {
             this.voices.push({
                 active: false,
+                channel: 0,
                 note: 0,
                 phase: 0,
                 phaseStep: 0,
@@ -65,15 +77,19 @@ class WavetableProcessor extends AudioWorkletProcessor {
     handleMessage(event: MessageEvent) {
         const { type, payload } = event.data;
         if (type === 'NOTE_ON') {
-            this.triggerAttack(payload.note, payload.velocity);
+            this.triggerAttack(payload.note, payload.velocity, payload.channel);
         } else if (type === 'NOTE_OFF') {
-            this.triggerRelease(payload.note);
-        } else if (type === 'SET_WAVETABLE') {
-            if (payload.length === WAVETABLE_SIZE) {
-                this.wavetable.set(payload);
+            this.triggerRelease(payload.note, payload.channel);
+        } else if (type === 'SET_CHANNEL_WAVETABLE') {
+            const ch = this.channels[payload.channel];
+            if (ch && payload.wavetable.length === WAVETABLE_SIZE) {
+                ch.wavetable.set(payload.wavetable);
             }
-        } else if (type === 'SET_ADSR') {
-            this.adsr = payload;
+        } else if (type === 'SET_CHANNEL_ADSR') {
+            const ch = this.channels[payload.channel];
+            if (ch) {
+                ch.adsr = payload.adsr;
+            }
         } else if (type === 'STOP_ALL') {
             this.voices.forEach(v => {
                 v.active = false;
@@ -83,7 +99,7 @@ class WavetableProcessor extends AudioWorkletProcessor {
         }
     }
 
-    triggerAttack(note: number, velocity: number) {
+    triggerAttack(note: number, velocity: number, channel: number) {
         // Find free voice or steal
         // Prioritize: IDLE > RELEASE > Oldest (not tracking age, so just pick first RELEASE or just first)
         let voice = this.voices.find(v => v.envState === 'IDLE');
@@ -97,6 +113,7 @@ class WavetableProcessor extends AudioWorkletProcessor {
 
         voice.active = true;
         voice.note = note;
+        voice.channel = channel;
         // Frequency calculation: 440 * 2^((note - 69)/12)
         const freq = 440 * Math.pow(2, (note - 69) / 12);
         // Phase step: (Freq / SampleRate) * WavetableSize
@@ -109,10 +126,10 @@ class WavetableProcessor extends AudioWorkletProcessor {
         voice.envLevel = 0;
     }
 
-    triggerRelease(note: number) {
-        // Trigger release for ALL voices playing this note (in case of unison or bugs, though usually one)
+    triggerRelease(note: number, channel: number) {
+        // Trigger release for ALL voices playing this note on this channel
         this.voices.forEach(v => {
-            if (v.active && v.note === note && v.envState !== 'RELEASE' && v.envState !== 'IDLE') {
+            if (v.active && v.note === note && v.channel === channel && v.envState !== 'RELEASE' && v.envState !== 'IDLE') {
                 v.envState = 'RELEASE';
                 v.envTime = 0;
                 v.releaseStartLevel = v.envLevel;
@@ -131,13 +148,16 @@ class WavetableProcessor extends AudioWorkletProcessor {
             for (const voice of this.voices) {
                 if (!voice.active) continue;
 
+                const chState = this.channels[voice.channel];
+                const adsr = chState.adsr;
+                const wavetable = chState.wavetable;
+
                 // --- Envelope Logic ---
-                let targetLevel = 0;
                 let stepSize = 0;
 
                 switch (voice.envState) {
                     case 'ATTACK':
-                        const aSamples = this.adsr.a * this.sampleRateVal;
+                        const aSamples = adsr.a * this.sampleRateVal;
                         if (aSamples <= 0) {
                             voice.envLevel = 1;
                             voice.envState = 'DECAY';
@@ -153,25 +173,25 @@ class WavetableProcessor extends AudioWorkletProcessor {
                         }
                         break;
                     case 'DECAY':
-                        const dSamples = this.adsr.d * this.sampleRateVal;
+                        const dSamples = adsr.d * this.sampleRateVal;
                         if (dSamples <= 0) {
-                            voice.envLevel = this.adsr.s;
+                            voice.envLevel = adsr.s;
                             voice.envState = 'SUSTAIN';
                         } else {
                             // Linear decay to Sustain
-                            stepSize = (1.0 - this.adsr.s) / dSamples;
+                            stepSize = (1.0 - adsr.s) / dSamples;
                             voice.envLevel -= stepSize;
-                            if (voice.envLevel <= this.adsr.s) {
-                                voice.envLevel = this.adsr.s;
+                            if (voice.envLevel <= adsr.s) {
+                                voice.envLevel = adsr.s;
                                 voice.envState = 'SUSTAIN';
                             }
                         }
                         break;
                     case 'SUSTAIN':
-                        voice.envLevel = this.adsr.s;
+                        voice.envLevel = adsr.s;
                         break;
                     case 'RELEASE':
-                        const rSamples = this.adsr.r * this.sampleRateVal;
+                        const rSamples = adsr.r * this.sampleRateVal;
                         if (rSamples <= 0) {
                             voice.envLevel = 0;
                             voice.active = false;
@@ -199,7 +219,7 @@ class WavetableProcessor extends AudioWorkletProcessor {
                     const frac = index - i;
                     const nextI = (i + 1) % WAVETABLE_SIZE;
 
-                    const val = this.wavetable[i] * (1 - frac) + this.wavetable[nextI] * frac;
+                    const val = wavetable[i] * (1 - frac) + wavetable[nextI] * frac;
 
                     sampleSum += val * currentGain;
 
